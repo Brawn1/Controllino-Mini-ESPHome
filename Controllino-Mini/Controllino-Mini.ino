@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <SoftwareSerial.h>
 
+
 #define d0 CONTROLLINO_D0
 #define d1 CONTROLLINO_D1
 #define d2 CONTROLLINO_D2
@@ -20,20 +21,21 @@
 #define a4 CONTROLLINO_A4
 #define a5 CONTROLLINO_A5
 
-#define RX 10
-#define TX 11
+#define RX 11
+#define TX 10
 
 SoftwareSerial mySerial(RX, TX); // RX, TX
 
 const uint8_t numDigitalOutputs = 8;
 const uint8_t numAnalogInputs = 6;
-bool digitalOutput[] = {d0, d1, d2, d3, d4, d5, d6, d7};
-uint16_t analogInput[] = {a0, a1, a2, a3, a4, a5};
+uint8_t digitalOutput[] = {d0, d1, d2, d3, d4, d5, d6, d7};
+uint8_t analogInput[] = {a0, a1, a2, a3, a4, a5};
 
-const uint8_t progversion = 5;
+const uint8_t progversion = 6;
 
-uint8_t serialbuffersize = 0;
-char serialbuffer[100];
+uint8_t serialbufferindex = 0;
+const uint8_t serialbuffersize = 200;
+uint8_t serialbuffer[serialbuffersize];;
 bool eepromupdate = false;
 
 
@@ -47,7 +49,7 @@ struct memorystruct{
 
 memorystruct memory = {
   false,
-  false,
+  true,
   false,
   {false, false, false, false, false, false, false, false},
   progversion,
@@ -72,8 +74,10 @@ void saveeeprom(int idx = 0){
 }
 
 void clsbuffer(){
-  memset(serialbuffer, 0, sizeof(serialbuffer));
-  serialbuffersize = 0;
+  for(uint8_t i=0;i<serialbuffersize;i++){
+    serialbuffer[i] = '\0';
+  }
+  serialbufferindex = 0;
 }
 
 
@@ -110,6 +114,12 @@ void init_input(){
 void switch_io(uint8_t port, bool on = false){
   uint8_t state = LOW;
   if(on)state = HIGH;
+  if(memory.debug){
+    Serial.print(F("switch_io Port = "));
+    Serial.print(port);
+    Serial.print(F(" state = "));
+    Serial.println(state);
+  }
   digitalWrite(port, state);
 }
 
@@ -119,13 +129,21 @@ bool is_on(uint8_t index){
 }
 
 void switch_task(uint8_t index, bool on = false){
-  if((index > numDigitalOutputs) || digitalOutput[index] == 0)return;
-  bool ison = is_on(index);
-  if(ison != on){
-    switch_io(digitalOutput[index], !ison);
-    if(memory.persistent){
-      memory.outPutStates[index] = is_on(index);
+  if(index > numDigitalOutputs)return;
+  if(memory.debug){
+    Serial.print(F("output = "));
+    Serial.print(index);
+    Serial.print(F(" switch "));
+    if(on){
+      Serial.println(F("on"));
+    } else {
+      Serial.println(F("off"));
     }
+  }
+  switch_io(digitalOutput[index], on);
+  if(memory.persistent){
+    memory.outPutStates[index] = on;
+    eepromupdate = true;
   }
 }
 
@@ -134,7 +152,7 @@ uint16_t readAnalogInput(uint8_t index){
 }
 
 
-bool readInput(uint8_t index, bool dpin = true){
+int readInput(uint8_t index, bool dpin = true){
   bool result = false;
   if(dpin){
     result = digitalRead(digitalOutput[index]);
@@ -166,8 +184,12 @@ void setup() {
   if(memory.debug)Serial.println(F("setup finish"));
   wdt_reset();
   if(memory.debug)Serial.println(F("setup mySerial"));
-  pinMode(RX, INPUT);
+  pinMode(RX, OUTPUT);
   pinMode(TX, OUTPUT);
+  digitalWrite(TX, HIGH);
+  delay(1000);
+  digitalWrite(TX, LOW);
+  pinMode(RX, INPUT);
   if(memory.debug)Serial.println(F("start mySerial"));
   mySerial.begin(9600);
   if(memory.persistent){
@@ -181,7 +203,7 @@ void setup() {
 }
 
 
-unsigned long currmillis, eepromtask, serialtask = 0;
+unsigned long currmillis, eepromtask, myserialtask, serialtask = 0;
 void loop() {
   currmillis = millis();
   if((unsigned long)(currmillis - eepromtask) >= 5000){
@@ -192,8 +214,13 @@ void loop() {
     eepromtask = millis();
   }
 
-  if((unsigned long)(currmillis - serialtask) >= 10){
+  if((unsigned long)(currmillis - myserialtask) >= 10){
     mySerialEvent();
+    myserialtask = millis();
+  }
+
+  if((Serial) && (unsigned long)(currmillis - serialtask) >= 20){
+    SerialEvent();
     serialtask = millis();
   }
 
@@ -201,17 +228,28 @@ void loop() {
   yield();
 }
 
+void SerialEvent(){
+  bool tosend = false;
+  while(Serial.available() > 0){
+    tosend = true;
+    char c = (char)Serial.read();
+    serialbuffer[serialbufferindex++] = c;
+    if(c == '\n' || c == '\r')break;
+  }
+  yield();
+  if(tosend)ProcessSerialEvent(serialbufferindex);
+}
 
 void mySerialEvent(){
   bool tosend = false;
   while(mySerial.available() > 0){
     tosend = true;
     char c = (char)mySerial.read();
-    serialbuffer[serialbuffersize++] = c;
+    serialbuffer[serialbufferindex++] = c;
     if(c == '\n' || c == '\r')break;
   }
   yield();
-  if(tosend)ProcessSerialEvent(serialbuffersize);
+  if(tosend)ProcessSerialEvent(serialbufferindex);
 }
 
 void ProcessSerialEvent(uint8_t index) {
@@ -227,7 +265,7 @@ void ProcessSerialEvent(uint8_t index) {
     Serial.println(sep); 
   }
 
-  if(strcmp(cmd,"switch") == 0){
+  if(strcmp(cmd,"sw") == 0){
     uint8_t id = atoi(strtok(sep, ','));
     char* on = strchr(sep, ',');
     *on = 0;
@@ -236,29 +274,37 @@ void ProcessSerialEvent(uint8_t index) {
     bool state = false;
     if(atoi(on)>0)state = true;
     switch_task(id, state);
-    if(memory.debug){
-      Serial.print(F("id = "));
-      Serial.print(id);
-      Serial.print(F(" switch on = "));
-      Serial.println(state);
-    }
   }
-  else if(strcmp(cmd,"reada") == 0){
-    if(atoi(sep) < 6 && atoi(sep) > 0){
+  else if(strcmp(cmd,"ra") == 0){
+    if(atoi(sep) < 6 && atoi(sep) >= 0){
       mySerial.println(readInput(atoi(sep), false));
     }
   }
-  else if(strcmp(cmd,"readd") == 0){
-    if(atoi(sep) < 8 && atoi(sep) > 0){
+  else if(strcmp(cmd,"rd") == 0){
+    if(atoi(sep) < 8 && atoi(sep) >= 0){
       mySerial.println(readInput(atoi(sep)));
     }
   }
-  else if(strcmp(cmd,"readv") == 0){
-    if(atoi(sep) < 6 && atoi(sep) > 0){
+  else if(strcmp(cmd,"rv") == 0){
+    if(atoi(sep) < 6 && atoi(sep) >= 0){
       mySerial.println(analogRead(atoi(sep)));
     }
   }
-  else if(strcmp(cmd,"persis") == 0){
+  else if(strcmp(cmd,"readin") == 0){
+    for(uint8_t i=0;i<numAnalogInputs; i++){
+      mySerial.print(readInput(i, false));
+      mySerial.print(F(","));
+    }
+    mySerial.println();
+  }
+  else if(strcmp(cmd,"readout") == 0){
+    for(uint8_t i=0;i<numDigitalOutputs; i++){
+      mySerial.print(readInput(i));
+      mySerial.print(F(","));
+    }
+    mySerial.println();
+  }
+  else if(strcmp(cmd,"persist") == 0){
     if(atoi(sep)>0){
       memory.persistent = true;
     } else {
@@ -280,5 +326,4 @@ void ProcessSerialEvent(uint8_t index) {
     }
   }
   clsbuffer();
-
 }
