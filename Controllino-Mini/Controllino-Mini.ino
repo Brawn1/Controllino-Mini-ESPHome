@@ -35,7 +35,7 @@ const uint8_t progversion = 6;
 
 uint8_t serialbufferindex = 0;
 const uint8_t serialbuffersize = 200;
-uint8_t serialbuffer[serialbuffersize];;
+uint8_t serialbuffer[serialbuffersize];
 bool eepromupdate = false;
 
 
@@ -228,28 +228,28 @@ void loop() {
   yield();
 }
 
+char lastchar = '0';
+
 void SerialEvent(){
-  bool tosend = false;
   while(Serial.available() > 0){
-    tosend = true;
     char c = (char)Serial.read();
+    lastchar = c;
     serialbuffer[serialbufferindex++] = c;
-    if(c == '\n' || c == '\r')break;
+    if(c == '\n')break;
   }
   yield();
-  if(tosend)ProcessSerialEvent(serialbufferindex);
+  if(lastchar == '\n' && serialbufferindex > 0)ProcessSerialEvent(serialbufferindex);
 }
 
 void mySerialEvent(){
-  bool tosend = false;
   while(mySerial.available() > 0){
-    tosend = true;
     char c = (char)mySerial.read();
+    lastchar = c;
     serialbuffer[serialbufferindex++] = c;
-    if(c == '\n' || c == '\r')break;
+    if(c == '\n')break;
   }
   yield();
-  if(tosend)ProcessSerialEvent(serialbufferindex);
+  if(lastchar == '\n' && serialbufferindex > 0)ProcessSerialEvent(serialbufferindex);
 }
 
 void ProcessSerialEvent(uint8_t index) {
@@ -276,14 +276,10 @@ void ProcessSerialEvent(uint8_t index) {
     switch_task(id, state);
   }
   else if(strcmp(cmd,"ra") == 0){
-    if(atoi(sep) < 6 && atoi(sep) >= 0){
       mySerial.println(readInput(atoi(sep), false));
-    }
   }
   else if(strcmp(cmd,"rd") == 0){
-    if(atoi(sep) < 8 && atoi(sep) >= 0){
       mySerial.println(readInput(atoi(sep)));
-    }
   }
   else if(strcmp(cmd,"rv") == 0){
     if(atoi(sep) < 6 && atoi(sep) >= 0){
