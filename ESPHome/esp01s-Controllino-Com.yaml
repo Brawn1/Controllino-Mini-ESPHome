@@ -1,0 +1,113 @@
+esphome:
+  name: garage-controllino-com
+  friendly_name: Garage Controllino Com
+
+esp8266:
+  board: esp01_1m
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "H05...vo="
+
+ota:
+  - platform: esphome
+    password: "72...d1"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Garage-Controllino-Com"
+    password: "ro...iH"
+
+captive_portal:
+    
+uart:
+  - id: uart_bus
+    tx_pin: GPIO2
+    rx_pin: GPIO0
+    baud_rate: 9600
+
+
+switch:
+  - platform: restart
+    name: ConCom Restart
+  - platform: template
+    name: "Gartentuere"
+    optimistic: true
+    turn_on_action: 
+      - uart.write: "sw,0,1\n"
+    turn_off_action: 
+      - uart.write: "sw,0,0\n"
+  - platform: template
+    name: "Relais D1"
+    optimistic: true
+    turn_on_action: 
+      - uart.write: "sw,1,1\n"
+    turn_off_action: 
+      - uart.write: "sw,1,0\n"
+  - platform: template
+    name: "Garagentor"
+    optimistic: true
+    turn_on_action: 
+      - uart.write: "sw,2,1\n"
+    turn_off_action: 
+      - uart.write: "sw,2,0\n"
+  - platform: template
+    name: "Relais D3"
+    optimistic: true
+    turn_on_action: 
+      - uart.write: "sw,3,1\n"
+    turn_off_action: 
+      - uart.write: "sw,3,0\n"
+  - platform: template
+    name: "Relais D4"
+    optimistic: true
+    turn_on_action: 
+      - uart.write: "sw,4,1\n"
+    turn_off_action: 
+      - uart.write: "sw,4,0\n"
+  - platform: template
+    name: "Relais D5"
+    optimistic: true
+    turn_on_action: 
+      - uart.write: "sw,5,1\n"
+    turn_off_action: 
+      - uart.write: "sw,5,0\n"
+  - platform: template
+    name: "Output D6"
+    optimistic: true
+    turn_on_action: 
+      - uart.write: "sw,6,1\n"
+    turn_off_action: 
+      - uart.write: "sw,6,0\n"
+  - platform: template
+    name: "Output D7"
+    optimistic: true
+    turn_on_action: 
+      - uart.write: "sw,7,1\n"
+    turn_off_action: 
+      - uart.write: "sw,7,0\n"
+  
+
+text_sensor:
+  # Expose WiFi information as sensors
+  - platform: wifi_info
+    ip_address:
+      name: ConCom IP
+    mac_address:
+      name: ConCom Mac Address
+
+sensor:
+  # Report wifi signal strength every 5 min if changed    
+  - platform: wifi_signal
+    name: ConCom WiFi Signal
+    update_interval: 300s
+    filters:
+      - delta: 10%
